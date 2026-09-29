@@ -1,0 +1,1267 @@
+<!DOCTYPE html>
+<html lang="ko" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>실시간 라이브 인포그래픽 대시보드</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0ea5e9',
+              600: '#0284c7',
+              700: '#0369a1',
+              800: '#075985',
+              900: '#0c4a6e',
+            },
+            accent: {
+              purple: '#8b5cf6',
+              emerald: '#10b981',
+              amber: '#f59e0b',
+              rose: '#f43f5e',
+              indigo: '#6366f1'
+            }
+          },
+          animation: {
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'spin-slow': 'spin 3s linear infinite',
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts & Font Awesome -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Chart.js & PapaParse -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Pretendard', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .glass-card {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-card-hover {
+      transition: all 0.3s ease;
+    }
+    .glass-card-hover:hover {
+      border-color: rgba(14, 165, 233, 0.4);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px -5px rgba(14, 165, 233, 0.15);
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+  </style>
+</head>
+<body class="h-full bg-slate-950 text-slate-100 flex flex-col min-h-screen">
+
+  <!-- Top Navigation Header -->
+  <header class="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 lg:px-8 py-3">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Brand & Status -->
+      <div class="flex items-center space-x-3">
+        <div class="p-2.5 bg-gradient-to-tr from-brand-600 to-accent-indigo rounded-xl shadow-lg shadow-brand-500/20 text-white">
+          <i class="fa-solid font-bold fa-chart-line text-xl"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="font-extrabold text-lg lg:text-xl tracking-tight text-white">Live Infographic Dashboard</h1>
+            <span id="liveBadge" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>
+              실시간 연동중
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+            <i class="fa-solid fa-link text-slate-500"></i>
+            <span id="sourceUrlDisplay" class="truncate max-w-[280px] sm:max-w-md italic">Google Sheet Live CSV</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Actions & Auto Refresh Settings -->
+      <div class="flex items-center space-x-2 sm:space-x-3">
+        
+        <!-- Refresh Interval Selector -->
+        <div class="flex items-center bg-slate-800/80 border border-slate-700/60 rounded-xl px-3 py-1.5 text-xs text-slate-300">
+          <i class="fa-solid fa-clock-rotate-left mr-2 text-brand-400"></i>
+          <span class="hidden sm:inline mr-2 font-medium">자동 갱신:</span>
+          <select id="autoRefreshSelect" class="bg-transparent text-white font-semibold focus:outline-none cursor-pointer">
+            <option value="0" class="bg-slate-800 text-slate-200">수동</option>
+            <option value="10" selected class="bg-slate-800 text-slate-200">10초</option>
+            <option value="30" class="bg-slate-800 text-slate-200">30초</option>
+            <option value="60" class="bg-slate-800 text-slate-200">1분</option>
+          </select>
+        </div>
+
+        <!-- Manual Refresh Button -->
+        <button id="btnRefresh" onclick="fetchLiveCSVData()" class="flex items-center px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-medium text-xs sm:text-sm transition-all shadow-md shadow-brand-600/30 active:scale-95">
+          <i id="refreshIcon" class="fa-solid fa-rotate mr-2"></i>
+          <span>새로고침</span>
+        </button>
+
+        <!-- Settings Modal Trigger -->
+        <button onclick="toggleSettingsModal(true)" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition">
+          <i class="fa-solid fa-sliders text-sm"></i>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 space-y-6">
+
+    <!-- Alert / Sync Notification Banner -->
+    <div id="syncBanner" class="hidden glass-card border-l-4 border-amber-500 p-4 rounded-xl flex items-start justify-between gap-4">
+      <div class="flex items-start space-x-3">
+        <i class="fa-solid fa-circle-info text-amber-400 text-lg mt-0.5"></i>
+        <div>
+          <h4 id="syncBannerTitle" class="text-sm font-semibold text-slate-200">데이터 가져오기 안내</h4>
+          <p id="syncBannerMessage" class="text-xs text-slate-400 mt-0.5">구글 시트 수신 상태를 확인하는 중입니다.</p>
+        </div>
+      </div>
+      <button onclick="document.getElementById('syncBanner').classList.add('hidden')" class="text-slate-400 hover:text-white text-xs">
+        <i class="fa-solid fa-xmark text-base"></i>
+      </button>
+    </div>
+
+    <!-- KPI Summary Cards (Dynamic Infographic Stats) -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      
+      <!-- Card 1: Total Records -->
+      <div class="glass-card glass-card-hover p-5 rounded-2xl relative overflow-hidden group">
+        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-brand-500/10 rounded-full blur-xl group-hover:bg-brand-500/20 transition-all"></div>
+        <div class="flex justify-between items-start">
+          <div>
+            <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">총 데이터 건수</p>
+            <h3 id="statTotalRows" class="text-3xl font-extrabold text-white mt-2 tracking-tight">--</h3>
+          </div>
+          <div class="p-3 bg-brand-500/10 border border-brand-500/20 rounded-xl text-brand-400">
+            <i class="fa-solid fa-database text-xl"></i>
+          </div>
+        </div>
+        <div class="mt-4 flex items-center text-xs text-emerald-400 font-medium">
+          <i class="fa-solid fa-arrow-trend-up mr-1"></i>
+          <span id="statRowStatus">실시간 업데이트 완료</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Total Sales (매출액 전용) -->
+      <div class="glass-card glass-card-hover p-5 rounded-2xl relative overflow-hidden group">
+        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-emerald-500/10 rounded-full blur-xl group-hover:bg-emerald-500/20 transition-all"></div>
+        <div class="flex justify-between items-start">
+          <div>
+            <p id="statLabel1" class="text-xs font-medium text-emerald-400 uppercase tracking-wider">📈 총 매출액</p>
+            <h3 id="statValue1" class="text-3xl font-extrabold text-white mt-2 tracking-tight">--</h3>
+          </div>
+          <div class="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+            <i class="fa-solid fa-sack-dollar text-xl"></i>
+          </div>
+        </div>
+        <div class="mt-4 flex items-center text-xs text-slate-400">
+          <span id="statSubText1" class="truncate">매출액 데이터 집계 중</span>
+        </div>
+      </div>
+
+      <!-- Card 3: Total Operating Profit (영업이익 전용) -->
+      <div class="glass-card glass-card-hover p-5 rounded-2xl relative overflow-hidden group">
+        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-brand-500/10 rounded-full blur-xl group-hover:bg-brand-500/20 transition-all"></div>
+        <div class="flex justify-between items-start">
+          <div>
+            <p id="statLabel2" class="text-xs font-medium text-brand-400 uppercase tracking-wider">📊 총 영업이익</p>
+            <h3 id="statValue2" class="text-3xl font-extrabold text-white mt-2 tracking-tight">--</h3>
+          </div>
+          <div class="p-3 bg-brand-500/10 border border-brand-500/20 rounded-xl text-brand-400">
+            <i class="fa-solid fa-chart-line text-xl"></i>
+          </div>
+        </div>
+        <div class="mt-4 flex items-center text-xs text-slate-400">
+          <span id="statSubText2" class="truncate">영업이익 데이터 집계 중</span>
+        </div>
+      </div>
+
+      <!-- Card 4: Operating Profit Margin (%) -->
+      <div class="glass-card glass-card-hover p-5 rounded-2xl relative overflow-hidden group">
+        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-accent-amber/10 rounded-full blur-xl group-hover:bg-accent-amber/20 transition-all"></div>
+        <div class="flex justify-between items-start">
+          <div>
+            <p id="statLabel3" class="text-xs font-medium text-amber-400 uppercase tracking-wider">💡 평균 영업이익률</p>
+            <h3 id="statValue3" class="text-3xl font-extrabold text-amber-300 mt-2 tracking-tight">--</h3>
+          </div>
+          <div class="p-3 bg-accent-amber/10 border border-accent-amber/20 rounded-xl text-accent-amber">
+            <i class="fa-solid fa-percent text-xl"></i>
+          </div>
+        </div>
+        <div class="mt-4 flex items-center text-xs text-slate-400">
+          <span id="statSubText3" class="truncate">매출 대비 이익 비중</span>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Visual Charts Dashboard Grid -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      
+      <!-- Chart 1: Sales Only Chart (매출액 독립 차트) -->
+      <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div>
+            <h3 class="font-bold text-base text-white flex items-center gap-2">
+              <i class="fa-solid fa-arrow-trend-up text-emerald-400"></i>
+              <span id="chartSalesTitle">매출액 (Sales) 독립 분석</span>
+            </h3>
+            <p class="text-xs text-slate-400">📈 항목별 매출액 추이 및 실적</p>
+          </div>
+          <select id="selectSalesChartType" onchange="updateDashboardVisuals()" class="bg-slate-800 text-xs text-slate-200 border border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer">
+            <option value="line" selected>꺾은선 (Line)</option>
+            <option value="bar">막대 (Bar)</option>
+          </select>
+        </div>
+
+        <div class="relative w-full h-[280px]">
+          <canvas id="chartCanvasSales"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 2: Profit Only Chart (영업이익 독립 차트) -->
+      <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div>
+            <h3 class="font-bold text-base text-white flex items-center gap-2">
+              <i class="fa-solid fa-chart-column text-brand-400"></i>
+              <span id="chartProfitTitle">영업이익 (Operating Profit) 독립 분석</span>
+            </h3>
+            <p class="text-xs text-slate-400">📊 항목별 영업이익 현황 및 실적</p>
+          </div>
+          <select id="selectProfitChartType" onchange="updateDashboardVisuals()" class="bg-slate-800 text-xs text-slate-200 border border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-brand-500 cursor-pointer">
+            <option value="bar" selected>막대 (Bar)</option>
+            <option value="line">꺾은선 (Line)</option>
+          </select>
+        </div>
+
+        <div class="relative w-full h-[280px]">
+          <canvas id="chartCanvasProfit"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 3: Cost of Goods Sold Chart (매출원가 막대 차트) -->
+      <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div>
+            <h3 class="font-bold text-base text-white flex items-center gap-2">
+              <i class="fa-solid fa-boxes-packing text-rose-400"></i>
+              <span id="chartCogsTitle">매출원가 (COGS) 독립 분석</span>
+            </h3>
+            <p class="text-xs text-slate-400">📦 항목별 매출원가 비중 및 지출</p>
+          </div>
+          <select id="selectCogsChartType" onchange="updateDashboardVisuals()" class="bg-slate-800 text-xs text-slate-200 border border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-rose-500 cursor-pointer">
+            <option value="bar" selected>막대 (Bar)</option>
+            <option value="line">꺾은선 (Line)</option>
+          </select>
+        </div>
+
+        <div class="relative w-full h-[280px]">
+          <canvas id="chartCanvasCogs"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 4: Marketing Cost Chart (마케팅원가 막대 차트) -->
+      <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div>
+            <h3 class="font-bold text-base text-white flex items-center gap-2">
+              <i class="fa-solid fa-bullhorn text-purple-400"></i>
+              <span id="chartMarketingTitle">마케팅원가 (Marketing Cost) 독립 분석</span>
+            </h3>
+            <p class="text-xs text-slate-400">📣 항목별 마케팅/광고 집행 비용</p>
+          </div>
+          <select id="selectMarketingChartType" onchange="updateDashboardVisuals()" class="bg-slate-800 text-xs text-slate-200 border border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-purple-500 cursor-pointer">
+            <option value="bar" selected>막대 (Bar)</option>
+            <option value="line">꺾은선 (Line)</option>
+          </select>
+        </div>
+
+        <div class="relative w-full h-[280px]">
+          <canvas id="chartCanvasMarketing"></canvas>
+        </div>
+      </div>
+
+    </section>
+
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      
+      <!-- Chart 5: Side-by-side Comparison Chart -->
+      <div class="glass-card p-5 rounded-2xl lg:col-span-2 flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="font-bold text-base text-white flex items-center gap-2">
+              <i class="fa-solid fa-scale-balanced text-amber-400"></i>
+              <span>매출액 / 원가 / 마케팅비 / 영업이익 비교</span>
+            </h3>
+            <p class="text-xs text-slate-400">모든 주요 지표 수치를 막대 그래프로 한눈에 대조 분석합니다.</p>
+          </div>
+        </div>
+
+        <div class="relative w-full h-[260px]">
+          <canvas id="chartCanvasCompare"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 6: Secondary Distribution Chart (Donut/Pie) -->
+      <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="font-bold text-base text-white flex items-center gap-2">
+              <i class="fa-solid fa-chart-pie text-accent-purple"></i>
+              <span id="chart2Title">매출 점유율 분포</span>
+            </h3>
+            <p class="text-xs text-slate-400">카테고리 비율 구성도</p>
+          </div>
+          <select id="selectChartType2" onchange="updateDashboardVisuals()" class="bg-slate-800 text-xs text-slate-200 border border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-brand-500 cursor-pointer">
+            <option value="doughnut">도넛 (Doughnut)</option>
+            <option value="pie">파이 (Pie)</option>
+            <option value="polarArea">폴라 영역 (Polar)</option>
+          </select>
+        </div>
+
+        <!-- Doughnut Canvas Container -->
+        <div class="relative w-full h-[260px] flex items-center justify-center">
+          <canvas id="chartCanvas2"></canvas>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Custom Axis Selectors & Analytics Customizer -->
+    <section class="glass-card p-5 rounded-2xl">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-800 pb-4 mb-4 gap-2">
+        <div>
+          <h3 class="font-bold text-base text-white flex items-center gap-2">
+            <i class="fa-solid fa-sliders text-accent-emerald"></i>
+            인포그래픽 축 & 지표 설정
+          </h3>
+          <p class="text-xs text-slate-400">차트에 적용할 스프레드시트 매핑 열을 지정하세요.</p>
+        </div>
+        <button onclick="resetDefaultConfig()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition border border-slate-700">
+          <i class="fa-solid fa-rotate-left mr-1"></i> 초기 설정으로 리셋
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <!-- X Axis Selection -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">기준 축 (X-Axis / 범주)</label>
+          <select id="selectXCol" onchange="rebindColumnsAndRender()" class="w-full bg-slate-800 text-sm text-white border border-slate-700 rounded-xl p-2.5 focus:outline-none focus:border-brand-500">
+            <option value="">데이터 읽는 중...</option>
+          </select>
+        </div>
+
+        <!-- Line Metric Selection (매출액) -->
+        <div>
+          <label class="block text-xs font-semibold text-emerald-400 mb-1.5">📈 매출액 지표</label>
+          <select id="selectLineCol" onchange="rebindColumnsAndRender()" class="w-full bg-slate-800 text-sm text-white border border-slate-700 rounded-xl p-2.5 focus:outline-none focus:border-brand-500">
+            <option value="">데이터 읽는 중...</option>
+          </select>
+        </div>
+
+        <!-- Bar Metric Selection (영업이익) -->
+        <div>
+          <label class="block text-xs font-semibold text-brand-400 mb-1.5">📊 영업이익 지표</label>
+          <select id="selectBarCol" onchange="rebindColumnsAndRender()" class="w-full bg-slate-800 text-sm text-white border border-slate-700 rounded-xl p-2.5 focus:outline-none focus:border-brand-500">
+            <option value="">데이터 읽는 중...</option>
+          </select>
+        </div>
+
+        <!-- COGS Metric Selection (매출원가) -->
+        <div>
+          <label class="block text-xs font-semibold text-rose-400 mb-1.5">📦 매출원가 지표</label>
+          <select id="selectCogsCol" onchange="rebindColumnsAndRender()" class="w-full bg-slate-800 text-sm text-white border border-slate-700 rounded-xl p-2.5 focus:outline-none focus:border-brand-500">
+            <option value="">데이터 읽는 중...</option>
+          </select>
+        </div>
+
+        <!-- Marketing Metric Selection (마케팅원가) -->
+        <div>
+          <label class="block text-xs font-semibold text-purple-400 mb-1.5">📣 마케팅원가 지표</label>
+          <select id="selectMarketingCol" onchange="rebindColumnsAndRender()" class="w-full bg-slate-800 text-sm text-white border border-slate-700 rounded-xl p-2.5 focus:outline-none focus:border-brand-500">
+            <option value="">데이터 읽는 중...</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- Interactive Live Data Table -->
+    <section class="glass-card p-5 rounded-2xl">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+        <div>
+          <h3 class="font-bold text-base text-white flex items-center gap-2">
+            <i class="fa-solid fa-table-list text-accent-indigo"></i>
+            실시간 실 데이터 탐색기
+          </h3>
+          <p class="text-xs text-slate-400">스프레드시트 원본 레코드를 검색하고 내보낼 수 있습니다.</p>
+        </div>
+
+        <!-- Table Actions & Search -->
+        <div class="flex items-center space-x-2 w-full sm:w-auto">
+          <!-- Search Box -->
+          <div class="relative flex-1 sm:w-64">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+            <input id="tableSearch" type="text" oninput="handleTableSearch()" placeholder="데이터 전체 검색..." class="w-full bg-slate-800 text-xs text-white pl-8 pr-3 py-2 rounded-xl border border-slate-700 focus:outline-none focus:border-brand-500">
+          </div>
+
+          <!-- Export Buttons -->
+          <button onclick="exportCSV()" title="CSV 다운로드" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition">
+            <i class="fa-solid fa-file-csv"></i>
+          </button>
+          <button onclick="exportJSON()" title="JSON 복사" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition">
+            <i class="fa-solid fa-code"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Table Container -->
+      <div class="overflow-x-auto rounded-xl border border-slate-800">
+        <table class="w-full text-left border-collapse text-xs">
+          <thead id="tableHead" class="bg-slate-800/90 text-slate-300 font-semibold uppercase tracking-wider border-b border-slate-700">
+            <tr>
+              <th class="p-3">불러오는 중...</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody" class="divide-y divide-slate-800/60 text-slate-300 font-normal">
+            <tr>
+              <td class="p-4 text-center text-slate-500">데이터를 동기화하고 있습니다...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Table Pagination Footer -->
+      <div class="flex items-center justify-between mt-4 text-xs text-slate-400">
+        <span id="pageInfo">0 - 0 / 0 항목</span>
+        <div class="flex items-center space-x-2">
+          <button id="btnPrevPage" onclick="changePage(-1)" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">
+            <i class="fa-solid fa-chevron-left mr-1"></i> 이전
+          </button>
+          <span id="currentPageNum" class="font-bold text-white px-2">1</span>
+          <button id="btnNextPage" onclick="changePage(1)" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">
+            다음 <i class="fa-solid fa-chevron-right ml-1"></i>
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="mt-auto border-t border-slate-800/80 bg-slate-900/50 py-4 px-4 text-center text-xs text-slate-500">
+    <p>Live Dashboard powered by Google Sheets API & Chart.js | 실시간 자동 수신 대시보드</p>
+  </footer>
+
+  <!-- Settings / URL Input Modal -->
+  <div id="settingsModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="glass-card max-w-lg w-full rounded-2xl p-6 shadow-2xl border border-slate-700 relative">
+      <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+        <h3 class="font-bold text-lg text-white flex items-center gap-2">
+          <i class="fa-solid fa-link text-brand-400"></i> 데이터 소스 설정
+        </h3>
+        <button onclick="toggleSettingsModal(false)" class="text-slate-400 hover:text-white">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4 my-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">구글 시트 CSV 게시 URL</label>
+          <input id="inputCsvUrl" type="url" class="w-full bg-slate-800 text-xs text-white p-3 rounded-xl border border-slate-700 focus:outline-none focus:border-brand-500" placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv">
+          <p class="text-[11px] text-slate-400 mt-1">구글 스프레드시트의 [파일] &gt; [공유] &gt; [웹에 게시]에서 CSV 형식으로 게시된 URL을 입력합니다.</p>
+        </div>
+
+        <div class="pt-2 border-t border-slate-800 flex items-center justify-between">
+          <span class="text-xs text-slate-400">또는 로컬 CSV 파일 직접 불러오기</span>
+          <label class="cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-brand-400 font-medium border border-slate-700">
+            <i class="fa-solid fa-upload mr-1"></i> 파일 선택
+            <input type="file" id="localFileInput" accept=".csv" class="hidden" onchange="handleFileUpload(event)">
+          </label>
+        </div>
+      </div>
+
+      <div class="flex justify-end space-x-2 pt-2 border-t border-slate-800">
+        <button onclick="toggleSettingsModal(false)" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium">취소</button>
+        <button onclick="saveNewCsvUrl()" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold">적용 및 새로고침</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* Global Application State */
+    const DEFAULT_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQUF27aC3bVyD1fTH6pqaEqj9j81MepEMx41l_9tS0bovXcPdS0h3W1fpNBTTOhkwbmXLscDSkHsF__/pub?gid=0&single=true&output=csv";
+    
+    let currentCsvUrl = DEFAULT_CSV_URL;
+    let rawCsvData = [];
+    let parsedColumns = [];
+    let numericColumns = [];
+    let textColumns = [];
+    
+    // Configurable Mapping
+    let selectedXCol = "";
+    let selectedLineCol = "";      // 매출액 지표 (Sales)
+    let selectedBarCol = "";       // 영업이익 지표 (Profit)
+    let selectedCogsCol = "";      // 매출원가 지표 (COGS)
+    let selectedMarketingCol = ""; // 마케팅원가 지표 (Marketing)
+    let selectedAgg = "sum";
+
+    // Chart Instances
+    let chartSalesInstance = null;
+    let chartProfitInstance = null;
+    let chartCogsInstance = null;
+    let chartMarketingInstance = null;
+    let chartCompareInstance = null;
+    let chartInstance2 = null;
+
+    // Table Pagination & Search
+    let filteredData = [];
+    let currentPage = 1;
+    const rowsPerPage = 8;
+
+    // Timer Handle
+    let refreshTimer = null;
+
+    window.onload = function() {
+      document.getElementById('inputCsvUrl').value = currentCsvUrl;
+      document.getElementById('sourceUrlDisplay').innerText = currentCsvUrl;
+
+      fetchLiveCSVData();
+
+      document.getElementById('autoRefreshSelect').addEventListener('change', setupAutoRefresh);
+      setupAutoRefresh();
+    };
+
+    async function fetchLiveCSVData() {
+      const refreshBtnIcon = document.getElementById('refreshIcon');
+      refreshBtnIcon.classList.add('animate-spin');
+
+      try {
+        // Attempt Direct Fetch or Proxy Fetch for CORS Safety
+        let targetUrl = currentCsvUrl;
+        
+        let response;
+        try {
+          response = await fetch(targetUrl, { cache: "no-store" });
+          if (!response.ok) throw new Error("네트워크 응답 오류");
+        } catch (err) {
+          // Fallback through CORS Proxy if direct fetch is blocked by browser CORS policy
+          console.warn("Direct fetch failed, trying proxy fallback...", err);
+          const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+          response = await fetch(proxyUrl);
+        }
+
+        const csvText = await response.text();
+        
+        if (!csvText || csvText.trim().length === 0) {
+          throw new Error("빈 데이터가 수신되었습니다.");
+        }
+
+        // Parse CSV using PapaParse
+        Papa.parse(csvText, {
+          header: true,
+          skipEmptyLines: true,
+          dynamicTyping: true,
+          complete: function(results) {
+            if (results.data && results.data.length > 0) {
+              processData(results.data);
+              showNotification("데이터 동기화 완료", "success");
+            } else {
+              showBannerAlert("데이터 형식을 읽을 수 없습니다. 기본 데모 데이터로 가공합니다.");
+              loadSampleDemoData();
+            }
+          },
+          error: function(err) {
+            console.error("PapaParse error:", err);
+            loadSampleDemoData();
+          }
+        });
+
+      } catch (error) {
+        console.error("Fetch Error:", error);
+        showBannerAlert("구글 시트를 직접 불러오는 중 오류가 발생하여 샘플 인포그래픽 데이터로 전환했습니다.");
+        loadSampleDemoData();
+      } finally {
+        setTimeout(() => refreshBtnIcon.classList.remove('animate-spin'), 600);
+      }
+    }
+
+    function processData(data) {
+      rawCsvData = data;
+      filteredData = [...rawCsvData];
+
+      // Detect Columns
+      parsedColumns = Object.keys(data[0] || {});
+      numericColumns = [];
+      textColumns = [];
+
+      // Categorize columns by data type
+      parsedColumns.forEach(col => {
+        const sampleVals = data.map(d => d[col]).filter(v => v !== null && v !== undefined && v !== "");
+        const isNumeric = sampleVals.length > 0 && sampleVals.every(v => !isNaN(Number(String(v).replace(/,/g, ''))));
+        
+        if (isNumeric) {
+          numericColumns.push(col);
+        } else {
+          textColumns.push(col);
+        }
+      });
+
+      // Update Column Dropdown Selectors
+      populateColumnSelects();
+
+      // Calculate Metrics & Render
+      calculateKPIs();
+      updateDashboardVisuals();
+      renderTable();
+    }
+
+    function populateColumnSelects() {
+      const selectX = document.getElementById('selectXCol');
+      const selectLine = document.getElementById('selectLineCol');
+      const selectBar = document.getElementById('selectBarCol');
+      const selectCogs = document.getElementById('selectCogsCol');
+      const selectMarketing = document.getElementById('selectMarketingCol');
+
+      selectX.innerHTML = '';
+      selectLine.innerHTML = '';
+      selectBar.innerHTML = '';
+      selectCogs.innerHTML = '';
+      selectMarketing.innerHTML = '';
+
+      parsedColumns.forEach(col => {
+        const optX = document.createElement('option');
+        optX.value = col;
+        optX.textContent = col;
+        selectX.appendChild(optX);
+
+        const optL = document.createElement('option');
+        optL.value = col;
+        optL.textContent = col;
+        selectLine.appendChild(optL);
+
+        const optB = document.createElement('option');
+        optB.value = col;
+        optB.textContent = col;
+        selectBar.appendChild(optB);
+
+        const optC = document.createElement('option');
+        optC.value = col;
+        optC.textContent = col;
+        selectCogs.appendChild(optC);
+
+        const optM = document.createElement('option');
+        optM.value = col;
+        optM.textContent = col;
+        selectMarketing.appendChild(optM);
+      });
+
+      // Smart Column Detection
+      if (!selectedXCol || !parsedColumns.includes(selectedXCol)) {
+        selectedXCol = textColumns[0] || parsedColumns[0] || "";
+      }
+      
+      // Auto-match Line Metric (매출액)
+      if (!selectedLineCol || !parsedColumns.includes(selectedLineCol)) {
+        selectedLineCol = numericColumns.find(c => c.includes('매출액') || c.includes('매출')) || numericColumns[0] || parsedColumns[1] || "";
+      }
+
+      // Auto-match Bar Metric (영업이익)
+      if (!selectedBarCol || !parsedColumns.includes(selectedBarCol)) {
+        selectedBarCol = numericColumns.find(c => c.includes('영업이익') || c.includes('이익')) || numericColumns[1] || numericColumns[0] || parsedColumns[2] || "";
+      }
+
+      // Auto-match COGS Metric (매출원가)
+      if (!selectedCogsCol || !parsedColumns.includes(selectedCogsCol)) {
+        selectedCogsCol = numericColumns.find(c => c.includes('원가') || c.includes('매출원가') || c.includes('COGS')) || numericColumns[2] || numericColumns[0] || "";
+      }
+
+      // Auto-match Marketing Metric (마케팅원가)
+      if (!selectedMarketingCol || !parsedColumns.includes(selectedMarketingCol)) {
+        selectedMarketingCol = numericColumns.find(c => c.includes('마케팅') || c.includes('광고') || c.includes('홍보')) || numericColumns[3] || numericColumns[0] || "";
+      }
+
+      selectX.value = selectedXCol;
+      selectLine.value = selectedLineCol;
+      selectBar.value = selectedBarCol;
+      selectCogs.value = selectedCogsCol;
+      selectMarketing.value = selectedMarketingCol;
+    }
+
+    function rebindColumnsAndRender() {
+      selectedXCol = document.getElementById('selectXCol').value;
+      selectedLineCol = document.getElementById('selectLineCol').value;
+      selectedBarCol = document.getElementById('selectBarCol').value;
+      selectedCogsCol = document.getElementById('selectCogsCol').value;
+      selectedMarketingCol = document.getElementById('selectMarketingCol').value;
+
+      calculateKPIs();
+      updateDashboardVisuals();
+    }
+
+    function calculateKPIs() {
+      const totalRows = rawCsvData.length;
+      document.getElementById('statTotalRows').innerText = totalRows.toLocaleString();
+
+      if (!selectedLineCol || totalRows === 0) return;
+
+      // Extract Line values (매출액)
+      const lineVals = rawCsvData
+        .map(d => Number(String(d[selectedLineCol] || 0).replace(/,/g, '')))
+        .filter(v => !isNaN(v));
+
+      // Extract Bar values (영업이익)
+      const barVals = rawCsvData
+        .map(d => Number(String(d[selectedBarCol] || 0).replace(/,/g, '')))
+        .filter(v => !isNaN(v));
+
+      const totalSales = lineVals.reduce((a, b) => a + b, 0);
+      const totalProfit = barVals.reduce((a, b) => a + b, 0);
+      const avgSales = Math.round(totalSales / (lineVals.length || 1));
+      const avgProfit = Math.round(totalProfit / (barVals.length || 1));
+
+      // Stat 1: 총 매출액
+      document.getElementById('statLabel1').innerText = `📈 총 ${selectedLineCol}`;
+      document.getElementById('statValue1').innerText = formatCompactNumber(totalSales);
+      document.getElementById('statSubText1').innerText = `평균 ${selectedLineCol}: ₩${avgSales.toLocaleString()}`;
+
+      // Stat 2: 총 영업이익
+      document.getElementById('statLabel2').innerText = `📊 총 ${selectedBarCol}`;
+      document.getElementById('statValue2').innerText = formatCompactNumber(totalProfit);
+      document.getElementById('statSubText2').innerText = `평균 ${selectedBarCol}: ₩${avgProfit.toLocaleString()}`;
+
+      // Stat 3: 영업이익률 (%)
+      const profitMargin = totalSales > 0 ? ((totalProfit / totalSales) * 100).toFixed(1) : "0.0";
+      document.getElementById('statLabel3').innerText = `💡 평균 영업이익률`;
+      document.getElementById('statValue3').innerText = `${profitMargin}%`;
+      document.getElementById('statSubText3').innerText = `매출액 대비 이익 비중`;
+    }
+
+    function formatCompactNumber(num) {
+      if (isNaN(num)) return '--';
+      if (Math.abs(num) >= 1e8) return (num / 1e8).toFixed(1) + '억원';
+      if (Math.abs(num) >= 1e4) return (num / 1e4).toFixed(0) + '만원';
+      return num.toLocaleString();
+    }
+
+    function updateDashboardVisuals() {
+      if (!rawCsvData || rawCsvData.length === 0) return;
+
+      // Update Chart Titles
+      document.getElementById('chartSalesTitle').innerText = `${selectedXCol}별 ${selectedLineCol || '매출액'}`;
+      document.getElementById('chartProfitTitle').innerText = `${selectedXCol}별 ${selectedBarCol || '영업이익'}`;
+      document.getElementById('chartCogsTitle').innerText = `${selectedXCol}별 ${selectedCogsCol || '매출원가'}`;
+      document.getElementById('chartMarketingTitle').innerText = `${selectedXCol}별 ${selectedMarketingCol || '마케팅원가'}`;
+      document.getElementById('chart2Title').innerText = `${selectedXCol} 매출 점유율`;
+
+      // Aggregate values grouped by X column
+      const aggregatedMap = new Map();
+
+      rawCsvData.forEach(row => {
+        const xKey = String(row[selectedXCol] ?? '기타');
+        const parseVal = (col) => {
+          const raw = row[col];
+          return isNaN(Number(String(raw).replace(/,/g, ''))) ? 0 : Number(String(raw).replace(/,/g, ''));
+        };
+
+        if (!aggregatedMap.has(xKey)) {
+          aggregatedMap.set(xKey, { lineVals: [], barVals: [], cogsVals: [], marketingVals: [] });
+        }
+        const item = aggregatedMap.get(xKey);
+        item.lineVals.push(parseVal(selectedLineCol));
+        item.barVals.push(parseVal(selectedBarCol));
+        item.cogsVals.push(parseVal(selectedCogsCol));
+        item.marketingVals.push(parseVal(selectedMarketingCol));
+      });
+
+      const labels = Array.from(aggregatedMap.keys()).slice(0, 15);
+      
+      const computeAgg = (vals) => {
+        if (!vals || vals.length === 0) return 0;
+        if (selectedAgg === 'sum') return vals.reduce((a, b) => a + b, 0);
+        if (selectedAgg === 'avg') return vals.reduce((a, b) => a + b, 0) / vals.length;
+        if (selectedAgg === 'count') return vals.length;
+        if (selectedAgg === 'max') return Math.max(...vals);
+        return 0;
+      };
+
+      const lineChartValues = labels.map(l => computeAgg(aggregatedMap.get(l)?.lineVals));
+      const barChartValues = labels.map(l => computeAgg(aggregatedMap.get(l)?.barVals));
+      const cogsChartValues = labels.map(l => computeAgg(aggregatedMap.get(l)?.cogsVals));
+      const marketingChartValues = labels.map(l => computeAgg(aggregatedMap.get(l)?.marketingVals));
+
+      // --- Chart 1: Sales Only Chart ---
+      const salesChartType = document.getElementById('selectSalesChartType').value;
+      const ctxSales = document.getElementById('chartCanvasSales').getContext('2d');
+      if (chartSalesInstance) chartSalesInstance.destroy();
+
+      chartSalesInstance = new Chart(ctxSales, {
+        type: salesChartType,
+        data: {
+          labels: labels,
+          datasets: [{
+            label: `${selectedLineCol || '매출액'}`,
+            data: lineChartValues,
+            borderColor: '#10b981',
+            backgroundColor: salesChartType === 'line' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.75)',
+            borderWidth: 2,
+            borderRadius: salesChartType === 'bar' ? 6 : 0,
+            pointBackgroundColor: '#10b981',
+            tension: 0.35,
+            fill: salesChartType === 'line'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ₩${(ctx.raw || 0).toLocaleString()}`
+              }
+            }
+          },
+          scales: {
+            x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8' } },
+            y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#10b981' } }
+          }
+        }
+      });
+
+      // --- Chart 2: Profit Only Chart ---
+      const profitChartType = document.getElementById('selectProfitChartType').value;
+      const ctxProfit = document.getElementById('chartCanvasProfit').getContext('2d');
+      if (chartProfitInstance) chartProfitInstance.destroy();
+
+      chartProfitInstance = new Chart(ctxProfit, {
+        type: profitChartType,
+        data: {
+          labels: labels,
+          datasets: [{
+            label: `${selectedBarCol || '영업이익'}`,
+            data: barChartValues,
+            borderColor: '#0284c7',
+            backgroundColor: profitChartType === 'line' ? 'rgba(14, 165, 233, 0.15)' : 'rgba(14, 165, 233, 0.75)',
+            borderWidth: 2,
+            borderRadius: profitChartType === 'bar' ? 6 : 0,
+            pointBackgroundColor: '#38bdf8',
+            tension: 0.35,
+            fill: profitChartType === 'line'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ₩${(ctx.raw || 0).toLocaleString()}`
+              }
+            }
+          },
+          scales: {
+            x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8' } },
+            y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#38bdf8' } }
+          }
+        }
+      });
+
+      // --- Chart 3: Cost of Goods Sold Chart (매출원가) ---
+      const cogsChartType = document.getElementById('selectCogsChartType').value;
+      const ctxCogs = document.getElementById('chartCanvasCogs').getContext('2d');
+      if (chartCogsInstance) chartCogsInstance.destroy();
+
+      chartCogsInstance = new Chart(ctxCogs, {
+        type: cogsChartType,
+        data: {
+          labels: labels,
+          datasets: [{
+            label: `${selectedCogsCol || '매출원가'}`,
+            data: cogsChartValues,
+            borderColor: '#f43f5e',
+            backgroundColor: cogsChartType === 'line' ? 'rgba(244, 63, 94, 0.15)' : 'rgba(244, 63, 94, 0.75)',
+            borderWidth: 2,
+            borderRadius: cogsChartType === 'bar' ? 6 : 0,
+            pointBackgroundColor: '#fb7185',
+            tension: 0.35,
+            fill: cogsChartType === 'line'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ₩${(ctx.raw || 0).toLocaleString()}`
+              }
+            }
+          },
+          scales: {
+            x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8' } },
+            y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#f43f5e' } }
+          }
+        }
+      });
+
+      // --- Chart 4: Marketing Cost Chart (마케팅원가) ---
+      const marketingChartType = document.getElementById('selectMarketingChartType').value;
+      const ctxMarketing = document.getElementById('chartCanvasMarketing').getContext('2d');
+      if (chartMarketingInstance) chartMarketingInstance.destroy();
+
+      chartMarketingInstance = new Chart(ctxMarketing, {
+        type: marketingChartType,
+        data: {
+          labels: labels,
+          datasets: [{
+            label: `${selectedMarketingCol || '마케팅원가'}`,
+            data: marketingChartValues,
+            borderColor: '#8b5cf6',
+            backgroundColor: marketingChartType === 'line' ? 'rgba(139, 92, 246, 0.15)' : 'rgba(139, 92, 246, 0.75)',
+            borderWidth: 2,
+            borderRadius: marketingChartType === 'bar' ? 6 : 0,
+            pointBackgroundColor: '#a78bfa',
+            tension: 0.35,
+            fill: marketingChartType === 'line'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ₩${(ctx.raw || 0).toLocaleString()}`
+              }
+            }
+          },
+          scales: {
+            x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8' } },
+            y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#a78bfa' } }
+          }
+        }
+      });
+
+      // --- Chart 5: Side-by-side Grouped Comparison Chart (All 4 metrics) ---
+      const ctxCompare = document.getElementById('chartCanvasCompare').getContext('2d');
+      if (chartCompareInstance) chartCompareInstance.destroy();
+
+      chartCompareInstance = new Chart(ctxCompare, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: `${selectedLineCol || '매출액'}`,
+              data: lineChartValues,
+              backgroundColor: 'rgba(16, 185, 129, 0.8)',
+              borderRadius: 4
+            },
+            {
+              label: `${selectedCogsCol || '매출원가'}`,
+              data: cogsChartValues,
+              backgroundColor: 'rgba(244, 63, 94, 0.8)',
+              borderRadius: 4
+            },
+            {
+              label: `${selectedMarketingCol || '마케팅원가'}`,
+              data: marketingChartValues,
+              backgroundColor: 'rgba(139, 92, 246, 0.8)',
+              borderRadius: 4
+            },
+            {
+              label: `${selectedBarCol || '영업이익'}`,
+              data: barChartValues,
+              backgroundColor: 'rgba(14, 165, 233, 0.8)',
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true,
+              position: 'top',
+              labels: { color: '#cbd5e1', font: { size: 11 }, boxWidth: 12 }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ₩${(ctx.raw || 0).toLocaleString()}`
+              }
+            }
+          },
+          scales: {
+            x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8' } },
+            y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8' } }
+          }
+        }
+      });
+
+      // --- Chart 6: Doughnut/Pie ---
+      const colors = [
+        '#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#f43f5e',
+        '#6366f1', '#14b8a6', '#ec4899', '#3b82f6', '#a855f7'
+      ];
+      const chartType2 = document.getElementById('selectChartType2').value;
+      const ctx2 = document.getElementById('chartCanvas2').getContext('2d');
+
+      if (chartInstance2) chartInstance2.destroy();
+
+      chartInstance2 = new Chart(ctx2, {
+        type: chartType2,
+        data: {
+          labels: labels,
+          datasets: [{
+            data: lineChartValues,
+            backgroundColor: colors,
+            borderColor: '#0f172a',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { color: '#cbd5e1', font: { size: 11 }, boxWidth: 12 }
+            }
+          }
+        }
+      });
+    }
+
+    function loadSampleDemoData() {
+      const sample = [
+        { "항목": "1분기 (Q1)", "방문자수": 15400, "매출액": 42000000, "매출원가": 21000000, "마케팅원가": 8400000, "영업이익": 12600000, "상태": "목표달성" },
+        { "항목": "2분기 (Q2)", "방문자수": 18900, "매출액": 58500000, "매출원가": 29250000, "마케팅원가": 11700000, "영업이익": 17550000, "상태": "초과달성" },
+        { "항목": "3분기 (Q3)", "방문자수": 21500, "매출액": 69000000, "매출원가": 34500000, "마케팅원가": 13800000, "영업이익": 20700000, "상태": "최고실적" },
+        { "항목": "4분기 (Q4)", "방문자수": 24800, "매출액": 81000000, "매출원가": 40500000, "마케팅원가": 15400000, "영업이익": 25100000, "상태": "최고실적" }
+      ];
+      processData(sample);
+    }
+
+    function resetDefaultConfig() {
+      selectedXCol = "";
+      selectedLineCol = "";
+      selectedBarCol = "";
+      selectedCogsCol = "";
+      selectedMarketingCol = "";
+      selectedAgg = "sum";
+      populateColumnSelects();
+      calculateKPIs();
+      updateDashboardVisuals();
+    }
+
+    function toggleSettingsModal(show) {
+      const modal = document.getElementById('settingsModal');
+      if (show) modal.classList.remove('hidden');
+      else modal.classList.add('hidden');
+    }
+
+    function saveNewCsvUrl() {
+      const newUrl = document.getElementById('inputCsvUrl').value.trim();
+      if (newUrl) {
+        currentCsvUrl = newUrl;
+        document.getElementById('sourceUrlDisplay').innerText = newUrl;
+        toggleSettingsModal(false);
+        fetchLiveCSVData();
+      }
+    }
+
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: true,
+        complete: function(results) {
+          if (results.data && results.data.length > 0) {
+            document.getElementById('sourceUrlDisplay').innerText = `로컬 파일: ${file.name}`;
+            processData(results.data);
+            toggleSettingsModal(false);
+            showNotification(`파일 '${file.name}'을 성공적으로 로드했습니다.`, "success");
+          }
+        }
+      });
+    }
+
+    function showBannerAlert(msg) {
+      const banner = document.getElementById('syncBanner');
+      const bannerMsg = document.getElementById('syncBannerMessage');
+      bannerMsg.innerText = msg;
+      banner.classList.remove('hidden');
+    }
+
+    function showNotification(message, type = "info") {
+      const toast = document.createElement('div');
+      toast.className = `fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-xl text-xs font-semibold text-white flex items-center space-x-2 transition-all transform duration-300 ${
+        type === 'success' ? 'bg-emerald-600' : 'bg-brand-600'
+      }`;
+      toast.innerHTML = `<i class="fa-solid fa-circle-check"></i> <span>${message}</span>`;
+      document.body.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        setTimeout(() => toast.remove(), 300);
+      }, 2500);
+    }
+
+    function exportCSV() {
+      if (!rawCsvData || rawCsvData.length === 0) return;
+      const csv = Papa.unparse(rawCsvData);
+      const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `dashboard_export_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function exportJSON() {
+      if (!rawCsvData || rawCsvData.length === 0) return;
+      const jsonStr = JSON.stringify(rawCsvData, null, 2);
+      
+      // Copy to clipboard fallback
+      const textArea = document.createElement("textarea");
+      textArea.value = jsonStr;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      
+      showNotification("JSON 데이터가 클립보드에 복사되었습니다.", "success");
+    }
+
+    // Table Rendering and Pagination
+    function renderTable() {
+      const tableHead = document.getElementById('tableHead');
+      const tableBody = document.getElementById('tableBody');
+      const pageInfo = document.getElementById('pageInfo');
+      const currentPageNum = document.getElementById('currentPageNum');
+      const btnPrevPage = document.getElementById('btnPrevPage');
+      const btnNextPage = document.getElementById('btnNextPage');
+
+      if (!tableHead || !tableBody) return;
+
+      if (!filteredData || filteredData.length === 0) {
+        tableHead.innerHTML = `<tr><th class="p-3 text-slate-400">데이터 없음</th></tr>`;
+        tableBody.innerHTML = `<tr><td class="p-4 text-center text-slate-500">조회된 데이터가 없습니다.</td></tr>`;
+        if (pageInfo) pageInfo.innerText = "0 - 0 / 0 항목";
+        if (currentPageNum) currentPageNum.innerText = "1";
+        if (btnPrevPage) btnPrevPage.disabled = true;
+        if (btnNextPage) btnNextPage.disabled = true;
+        return;
+      }
+
+      // Render Table Header
+      const columns = Object.keys(filteredData[0]);
+      tableHead.innerHTML = `<tr>` + columns.map(col => `<th class="p-3">${col}</th>`).join('') + `</tr>`;
+
+      // Pagination Calculation
+      const totalItems = filteredData.length;
+      const totalPages = Math.ceil(totalItems / rowsPerPage) || 1;
+      if (currentPage > totalPages) currentPage = totalPages;
+      if (currentPage < 1) currentPage = 1;
+
+      const startIndex = (currentPage - 1) * rowsPerPage;
+      const endIndex = Math.min(startIndex + rowsPerPage, totalItems);
+      const pageRows = filteredData.slice(startIndex, endIndex);
+
+      // Render Table Body
+      tableBody.innerHTML = pageRows.map(row => {
+        return `<tr class="hover:bg-slate-800/50 transition">` +
+          columns.map(col => `<td class="p-3 text-slate-300 border-b border-slate-800/40">${row[col] ?? ''}</td>`).join('') +
+          `</tr>`;
+      }).join('');
+
+      // Update Pagination Controls
+      if (pageInfo) pageInfo.innerText = `${startIndex + 1} - ${endIndex} / ${totalItems} 항목`;
+      if (currentPageNum) currentPageNum.innerText = currentPage;
+      if (btnPrevPage) btnPrevPage.disabled = currentPage <= 1;
+      if (btnNextPage) btnNextPage.disabled = currentPage >= totalPages;
+    }
+
+    // Live Search Filter for Table
+    function handleTableSearch() {
+      const searchInput = document.getElementById('tableSearch');
+      const query = (searchInput?.value || '').toLowerCase().trim();
+
+      if (!query) {
+        filteredData = [...rawCsvData];
+      } else {
+        filteredData = rawCsvData.filter(row => {
+          return Object.values(row).some(val => 
+            String(val ?? '').toLowerCase().includes(query)
+          );
+        });
+      }
+
+      currentPage = 1;
+      renderTable();
+    }
+
+    // Change Pagination Page
+    function changePage(delta) {
+      currentPage += delta;
+      renderTable();
+    }
+
+    // Auto Refresh Timer Handler
+    function setupAutoRefresh() {
+      if (refreshTimer) clearInterval(refreshTimer);
+      const select = document.getElementById('autoRefreshSelect');
+      if (!select) return;
+      const seconds = parseInt(select.value, 10);
+      if (seconds > 0) {
+        refreshTimer = setInterval(fetchLiveCSVData, seconds * 1000);
+      }
+    }
+  </script>
+</body>
+</html>
